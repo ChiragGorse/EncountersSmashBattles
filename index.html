@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Encounters Smash Battles</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#111;font-family:system-ui,sans-serif;color:#fff}
+  canvas{display:block}
+  #hud{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:space-around;pointer-events:none}
+  .card{background:rgba(0,0,0,.55);border:2px solid #fff3;border-radius:10px;padding:8px 14px;min-width:230px}
+  .name{font-weight:700;letter-spacing:1px}
+  .mult{font-size:34px;font-weight:800;line-height:1.1}
+  .bar{height:10px;background:#333;border-radius:5px;overflow:hidden;margin-top:4px}
+  .bar>div{height:100%;background:#4fc3ff;width:100%}
+  .cds{font-size:12px;opacity:.85;margin-top:4px}
+  #menu,#end{position:fixed;inset:0;background:rgba(10,8,20,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center}
+  h1{margin:0;font-size:44px} .row{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+  button{font-size:18px;padding:14px 22px;border-radius:10px;border:2px solid #fff4;background:#2a2450;color:#fff;cursor:pointer;max-width:320px}
+  button:hover{background:#4a3a90}
+  small{opacity:.75;max-width:640px;line-height:1.5}
+  #msg{position:fixed;top:14px;width:100%;text-align:center;font-size:22px;font-weight:700;text-shadow:0 2px 6px #000;pointer-events:none}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="msg"></div>
+<div id="hud"><div class="card" id="p1"></div><div class="card" id="p2"></div></div>
+<div id="menu">
+  <h1>ENCOUNTERS SMASH BATTLES</h1>
+  <div>Pick your fighter (you fight the other one). Knock them off the stage — no health, just a climbing knockback multiplier!</div>
+  <div class="row">
+    <button data-c="mai"><b>MAI</b><br><small>Spin · Invisibility · Hat teleport · Card teleport</small></button>
+    <button data-c="brave"><b>BRAVE</b><br><small>Chain stun · Slam · Thrust · Fireball</small></button>
+  </div>
+  <small>
+    <b>WASD</b> move · <b>Space</b> jump (x2) · <b>Shift</b> shield · <b>J</b> sword · <b>Q/E</b> turn camera<br>
+    <b>Mai:</b> K spin · L invisible · U hat (press again to teleport) · I card (throw, press again to teleport to target)<br>
+    <b>Brave:</b> K chain · L jump-slam · U thrust · I fireball<br>
+    Shield drains while held and from hits; if it breaks you're stunned.
+  </small>
+</div>
+<div id="end" class="hidden"><h1 id="endt"></h1><button onclick="location.reload()">Back to menu</button></div>
+<script src="lib/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
