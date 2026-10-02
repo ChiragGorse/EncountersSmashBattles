@@ -104,14 +104,14 @@ class Fighter {
     this.name = kind.toUpperCase(); this.stocks = 3; this.reset();
     this.reach = kind === 'brave' ? 3.1 : 2.0;
     this.swordDmg = kind === 'brave' ? 9 : 5; this.swordKB = kind === 'brave' ? 15 : 11;
-    this.cd = { k: 0, l: 0, u: 0, i: 0, sword: 0 };
+    this.cd = { k: 0, l: 0, u: 0, i: 0, sword: 0, dash: 0 };
     this.shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 16),
       new THREE.MeshBasicMaterial({ color: 0x4fc3ff, transparent: true, opacity: .35 }));
     this.shieldMesh.visible = false; scene.add(this.shieldMesh);
   }
   reset() {
     this.pos = this.spawn.clone().add(V(0, 6, 0)); this.vel = V(); this.mult = 1.0;
-    this.facing = V(0, 0, this.spawn.z > 0 ? -1 : 1); this.onGround = false; this.jumps = 2;
+    this.facing = V(0, 0, this.spawn.z > 0 ? -1 : 1); this.onGround = false; this.energy = 100; this.dashT = 0;
     this.stun = 0; this.hitstun = 0; this.invuln = 2; this.act = null; this.shield = 100; this.shielding = false;
     this.shieldBroken = 0; this.invis = 0; this.hat = null; this.card = null; this.swing = 0; this.alive = true;
     this.chainStunned = 0; this.spin = 0;
@@ -150,7 +150,13 @@ class Fighter {
   }
   useAbility(slot) {
     if (!this.alive || this.stun > 0 || this.hitstun > 0 || this.shieldBroken > 0) return;
-    const A = ABILITIES[this.kind][slot]; if (A) A(this);
+    const A = ABILITIES[this.kind][slot]; if (!A) return;
+    const free = (slot === 'u' && this.kind === 'mai' && this.hat) || (slot === 'i' && this.kind === 'mai' && this.card);
+    const cost = free ? 0 : COST[this.kind][slot];
+    if (this.energy < cost) return;
+    const cd0 = this.cd[slot], hat0 = this.hat, card0 = this.card;
+    A(this);
+    if (!free && (this.cd[slot] > cd0 || this.hat !== hat0 || this.card !== card0)) this.energy -= cost;
   }
 }
 
@@ -192,6 +198,8 @@ function addProj(o) { o.mesh.position.copy(o.pos); scene.add(o.mesh); projectile
 function removeProj(p) { scene.remove(p.mesh); if (p.link) scene.remove(p.link); projectiles.splice(projectiles.indexOf(p), 1); }
 
 // ---------- abilities ----------
+const COST = { mai: { k: 25, l: 30, u: 15, i: 20 }, brave: { k: 20, l: 30, u: 25, i: 15 } };
+const JUMP_COST = 10, DASH_COST = 15, ENERGY_REGEN = 25;
 const ABILITIES = {
   mai: {
     k(f) { // spinning attack
@@ -319,7 +327,7 @@ function controls(f, dt) {
   const fwd = V(-Math.sin(camYaw), 0, -Math.cos(camYaw)), right = V(Math.cos(camYaw), 0, -Math.sin(camYaw));
   const mv = V();
   if (k.KeyW) mv.add(fwd); if (k.KeyS) mv.sub(fwd); if (k.KeyD) mv.add(right); if (k.KeyA) mv.sub(right);
-  const want = { mv, jump: pr.Space, shield: k.ShiftLeft || k.ShiftRight, sword: pr.KeyJ, k: pr.KeyK, l: pr.KeyL, u: pr.KeyU, i: pr.KeyI };
+  const want = { mv, jump: pr.Space, shield: k.ShiftLeft || k.ShiftRight, sword: pr.KeyJ, dash: pr.KeyC, k: pr.KeyK, l: pr.KeyL, u: pr.KeyU, i: pr.KeyI };
   return want;
 }
 
@@ -331,7 +339,7 @@ function aiControls(f, dt) {
   const off = Math.max(Math.abs(f.pos.x), Math.abs(f.pos.z)) > STAGE - 0.5 || f.pos.y < -1;
   if (off && f.pos.y < 1.5) {
     want.mv = f.pos.clone().multiplyScalar(-1).setY(0).normalize();
-    if (f.vel.y < 2 && f.jumps > 0 && Math.random() < .08) want.jump = true;
+    if (f.vel.y < 2 && f.energy > JUMP_COST && Math.random() < .08) want.jump = true;
     if (f.kind === 'brave' && f.pos.y < -3) want.l = false;
     return want;
   }
@@ -363,6 +371,8 @@ function stepFighter(f, dt) {
   const want = f.human ? controls(f, dt) : aiControls(f, dt);
 
   // shield
+  if (f.onGround && f.hitstun <= 0) f.energy = Math.min(100, f.energy + ENERGY_REGEN * dt); // ground-only regen
+  f.dashT = Math.max(0, f.dashT - dt);
   f.shielding = !!want.shield && f.shieldBroken <= 0 && f.shield > 0 && !f.act && f.stun <= 0 && f.hitstun <= 0 && f.onGround;
   if (f.shielding) f.shield = Math.max(0, f.shield - 7 * dt); else if (f.shieldBroken <= 0) f.shield = Math.min(100, f.shield + 12 * dt);
   if (f.shield <= 0 && f.shielding) { f.shieldBroken = 2.5; f.shielding = false; }
@@ -383,7 +393,8 @@ function stepFighter(f, dt) {
   // movement
   const free = !f.act && f.stun <= 0 && f.hitstun <= 0 && f.shieldBroken <= 0 && !f.shielding;
   const free2 = f.act && f.act.name !== 'thrust' && f.act.name !== 'slam' && f.act.name !== 'spin' && f.hitstun <= 0 && f.stun <= 0 && f.act.name !== 'chain';
-  if ((free || free2) && want.mv.lengthSq() > 0) {
+  if (f.dashT > 0) { /* dashing: keep velocity */ }
+  else if ((free || free2) && want.mv.lengthSq() > 0) {
     const m = want.mv.clone().normalize(); const sp = 9 * (free2 ? .5 : 1);
     const ctrl = f.onGround ? 1 : 0.25;
     f.vel.x += (m.x * sp - f.vel.x) * Math.min(1, 12 * dt * ctrl); f.vel.z += (m.z * sp - f.vel.z) * Math.min(1, 12 * dt * ctrl);
@@ -395,14 +406,19 @@ function stepFighter(f, dt) {
     const foe = other(f);
     if (foe && want.mv.lengthSq() === 0 && (want.sword || want.k || want.l || want.u || want.i)) f.facing.copy(foe.pos.clone().sub(f.pos).setY(0).normalize());
   }
-  if (want.jump && (free || free2) && f.jumps > 0) { f.vel.y = f.onGround ? 14 : 13; f.jumps--; f.onGround = false; spawnBurst(f.pos, 0xffffff, 4); }
+  if (want.dash && (free || free2) && f.energy >= DASH_COST && f.cd.dash <= 0) {
+    const d = want.mv.lengthSq() > 0 ? want.mv.clone().normalize() : f.facing.clone();
+    f.vel.x = d.x * 26; f.vel.z = d.z * 26; if (!f.onGround) f.vel.y = Math.max(f.vel.y, 2);
+    f.dashT = 0.2; f.cd.dash = 0.45; f.energy -= DASH_COST; f.facing.copy(d); spawnBurst(f.pos.clone().add(V(0, 1, 0)), 0xffffff, 8);
+  }
+  if (want.jump && (free || free2) && (f.onGround || f.energy >= JUMP_COST)) { f.vel.y = f.onGround ? 14 : 13; if (!f.onGround) f.energy -= JUMP_COST; f.onGround = false; spawnBurst(f.pos, 0xffffff, 4); }
 
   // physics
   if (!(f.stun > 0)) f.vel.y -= GRAV * dt; else f.vel.y = Math.max(f.vel.y - GRAV * dt, -2) * 0 ;
   if (f.stun > 0) { f.vel.x = 0; f.vel.z = 0; }
   f.pos.addScaledVector(f.vel, dt);
   const onStage = Math.abs(f.pos.x) < STAGE && Math.abs(f.pos.z) < STAGE;
-  if (onStage && f.pos.y <= 0 && f.pos.y > -1.2 && f.vel.y <= 0) { f.pos.y = 0; f.vel.y = 0; f.onGround = true; f.jumps = 2; }
+  if (onStage && f.pos.y <= 0 && f.pos.y > -1.2 && f.vel.y <= 0) { f.pos.y = 0; f.vel.y = 0; f.onGround = true; }
   else f.onGround = false;
   if (!onStage && f.pos.y < 0 && f.pos.y > -3 && (Math.abs(f.pos.x) < STAGE + .4 && Math.abs(f.pos.z) < STAGE + .4)) { /* ledge lip */ }
   // wall of stage side
@@ -483,6 +499,7 @@ function hud() {
     document.getElementById('p' + (i + 1)).innerHTML =
       `<div class="name">${i ? 'CPU ' : 'YOU '}— ${f.name} &nbsp; ${'●'.repeat(Math.max(f.stocks, 0))}</div>` +
       `<div class="mult" style="color:hsl(${Math.max(0, 60 - f.mult * 12)},100%,60%)">x${f.mult.toFixed(2)}</div>` +
+      `<div class="bar"><div style="width:${f.energy}%;background:#ffd23f"></div></div>` +
       `<div class="bar"><div style="width:${f.shield}%;background:${f.shieldBroken > 0 ? '#f55' : '#4fc3ff'}"></div></div>` +
       `<div class="cds">${f.shieldBroken > 0 ? 'SHIELD BROKEN! ' : 'Shield '}${Math.round(f.shield)} &nbsp; ${i ? '' : cds}</div>`;
   });
